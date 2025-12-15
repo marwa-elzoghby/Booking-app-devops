@@ -1,46 +1,74 @@
-# Base PHP 7.4 FPM image
-FROM php:7.4-fpm
+### -----------------------
+### Stage 1: Node build
+### -----------------------
+FROM node:20-alpine AS node-builder
 
-# Set working directory
-WORKDIR /var/www/html
+WORKDIR /app
 
-# Install system dependencies
-RUN apt-get update && apt-get install -y \
-    git \
-    unzip \
-    curl \
-    libpng-dev \
-    libonig-dev \
-    libxml2-dev \
-    libzip-dev \
-    zip \
-    gnupg \
-    && docker-php-ext-install pdo_mysql mbstring exif pcntl bcmath gd zip
+COPY package*.json ./
+RUN npm install
 
-# Install Node 20 (npm comes with it)
-RUN curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
-    && apt-get install -y nodejs
+COPY . .
+RUN npm run dev
 
-# Install Composer
-COPY --from=composer:2 /usr/bin/composer /usr/bin/composer
 
-# Copy application code
+### -----------------------
+### Stage 2: Composer build
+### -----------------------
+FROM composer:2 AS composer-builder
+
+WORKDIR /app
+
+COPY composer.json composer.lock ./
+RUN composer install \
+    --no-dev \
+    --no-interaction \
+    --prefer-dist \
+    --optimize-autoloader
+
 COPY . .
 
-# Install PHP dependencies
-RUN composer install --no-interaction --prefer-dist --optimize-autoloader
 
-# Set Node options for legacy OpenSSL support
-ENV NODE_OPTIONS=--openssl-legacy-provider
+### -----------------------
+### Stage 3: PHP runtime (FINAL IMAGE)
+### -----------------------
+FROM php:7.4-fpm-alpine
 
-# Install Node dependencies & build assets
-RUN npm install && npm run dev
+WORKDIR /var/www/html
 
-# Set permissions for Laravel storage and cache
-RUN chown -R www-data:www-data /var/www/html/storage /var/www/html/bootstrap/cache
+# Install only required runtime libs
+RUN apk add --no-cache \
+    libpng \
+    libzip \
+    oniguruma \
+    libxml2 \
+    zip \
+    unzip
 
-# Expose port 9000 for PHP-FPM
+# PHP extensions
+RUN docker-php-ext-install \
+    pdo_mysql \
+    mbstring \
+    exif \
+    pcntl \
+    bcmath \
+    gd \
+    zip
+
+# Copy app source
+COPY . .
+
+# Copy vendor from composer stage
+COPY --from=composer-builder /app/vendor /var/www/html/vendor
+
+# Copy built assets from node stage
+COPY --from=node-builder /app/public /var/www/html/public
+
+# Permissions
+RUN chown -R www-data:www-data \
+    /var/www/html/storage \
+    /var/www/html/bootstrap/cache
+
 EXPOSE 9000
 
-# Start PHP-FPM
 CMD ["php-fpm"]
