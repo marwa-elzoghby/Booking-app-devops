@@ -17,9 +17,12 @@ class RoleHasPermissionSeeder extends Seeder
     {
         app()->make(\Spatie\Permission\PermissionRegistrar::class)->forgetCachedPermissions();
 
-        // Admin
+        // Admin (match by name to avoid relying on numeric ids)
         $admin_permissions = Permission::all();
-        Role::findOrFail(1)->permissions()->sync($admin_permissions->pluck('id'));
+        $adminRole = Role::where('name', 'Admin')->first();
+        if ($adminRole) {
+            $adminRole->permissions()->sync($admin_permissions->pluck('id'));
+        }
 
         // User
         $user_permissions = $admin_permissions->filter(function($permission) {
@@ -27,6 +30,9 @@ class RoleHasPermissionSeeder extends Seeder
                 substr($permission->name, 0, 5) != 'role_' &&
                 substr($permission->name, 0, 11) != 'permission_';
         });
-        Role::findOrFail(2)->permissions()->sync($user_permissions);
+        $userRole = Role::where('name', 'User')->first();
+        if ($userRole) {
+            $userRole->permissions()->sync($user_permissions->pluck('id'));
+        }
     }
 }

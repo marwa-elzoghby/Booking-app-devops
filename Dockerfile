@@ -9,7 +9,7 @@ COPY package*.json ./
 RUN npm install
 
 COPY . .
-RUN npm run dev
+RUN NODE_OPTIONS=--openssl-legacy-provider npm run dev
 
 
 ### -----------------------
@@ -20,13 +20,15 @@ FROM composer:2 AS composer-builder
 WORKDIR /app
 
 COPY composer.json composer.lock ./
+COPY . .
+
 RUN composer install \
     --no-dev \
     --no-interaction \
     --prefer-dist \
-    --optimize-autoloader
-
-COPY . .
+    --optimize-autoloader \
+    --ignore-platform-reqs \
+    --no-scripts
 
 
 ### -----------------------
@@ -39,9 +41,19 @@ WORKDIR /var/www/html
 # Install only required runtime libs
 RUN apk add --no-cache \
     libpng \
+    libpng-dev \
     libzip \
+    libzip-dev \
+    zlib \
+    zlib-dev \
     oniguruma \
+    oniguruma-dev \
     libxml2 \
+    libxml2-dev \
+    libjpeg-turbo-dev \
+    freetype-dev \
+    pkgconf \
+    build-base \
     zip \
     unzip
 
@@ -56,6 +68,8 @@ RUN docker-php-ext-install \
     zip
 
 # Copy app source
+
+# Copy application source
 COPY . .
 
 # Copy vendor from composer stage
@@ -64,6 +78,10 @@ COPY --from=composer-builder /app/vendor /var/www/html/vendor
 # Copy built assets from node stage
 COPY --from=node-builder /app/public /var/www/html/public
 
+# Copy entrypoint and make executable
+COPY entrypoint.sh /usr/local/bin/entrypoint.sh
+RUN chmod +x /usr/local/bin/entrypoint.sh
+
 # Permissions
 RUN chown -R www-data:www-data \
     /var/www/html/storage \
@@ -71,4 +89,4 @@ RUN chown -R www-data:www-data \
 
 EXPOSE 9000
 
-CMD ["php-fpm"]
+ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
